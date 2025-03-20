@@ -2,7 +2,7 @@
 
 An interactive 2D visualization of Generative Adversarial Network (GAN) training dynamics, showing how a generator network learns to produce realistic panda images from random noise.
 
-![GAN Training Visualization](main.png)
+![GAN Training Visualization](gan_animation.gif)
 
 ## Overview
 
