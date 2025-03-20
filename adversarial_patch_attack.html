@@ -58,6 +58,20 @@
         button:hover {
             background-color: #45a049;
         }
+        #runAttackBtn {
+            background-color: #f44336;
+            font-weight: bold;
+            min-width: 120px;
+        }
+        #runAttackBtn:hover {
+            background-color: #d32f2f;
+        }
+        #runAttackBtn.paused {
+            background-color: #4CAF50;
+        }
+        #runAttackBtn.paused:hover {
+            background-color: #45a049;
+        }
         .info-panel {
             position: absolute;
             top: 10px;
@@ -149,7 +163,11 @@
             </div>
 
             <div class="control-group">
-                <button id="resetButton">Reset Attack</button>
+                <button id="runAttackBtn">Run Attack</button>
+            </div>
+
+            <div class="control-group">
+                <button id="resetButton">Reset</button>
             </div>
         </div>
 
@@ -189,6 +207,7 @@
         let currentIteration = 0;
         let patchSize = 1.5;
         let isAttacking = false;
+        let isPaused = true;
         let attackType = 'targeted';
         let targetNetwork = 'YOLOv3';
         let detectionConfidence = 0.96;
@@ -236,6 +255,7 @@
             document.getElementById('attackType').addEventListener('change', updateAttackType);
             document.getElementById('network').addEventListener('change', updateNetwork);
             document.getElementById('resetButton').addEventListener('click', resetAttack);
+            document.getElementById('runAttackBtn').addEventListener('click', toggleAttack);
             
             // Start animation loop
             animate();
@@ -364,14 +384,12 @@
         }
         
         function applyPGDAttack() {
-            if (!isAttacking) {
-                isAttacking = true;
-                currentIteration = 0;
-                updateAttackInfo();
+            if (!isAttacking || isPaused) {
+                return;
             }
             
             if (currentIteration >= iterations) {
-                isAttacking = false;
+                pauseAttack();
                 return;
             }
             
@@ -527,7 +545,7 @@
             requestAnimationFrame(animate);
             
             // Apply PGD attack if in progress
-            if (isAttacking && currentIteration < iterations) {
+            if (isAttacking && !isPaused && currentIteration < iterations) {
                 applyPGDAttack();
             }
             
@@ -579,6 +597,7 @@
         function resetAttack() {
             // Reset attack progress
             isAttacking = false;
+            isPaused = true;
             currentIteration = 0;
             
             // Reset bounding box
@@ -597,6 +616,54 @@
             document.getElementById('detectionClass').textContent = `Person (96%)`;
             document.getElementById('attackProgress').textContent = `0%`;
             document.getElementById('progress-indicator').style.width = `0%`;
+            
+            // Update run button
+            updateRunButton();
+        }
+        
+        function toggleAttack() {
+            if (!isAttacking) {
+                startAttack();
+            } else {
+                if (isPaused) {
+                    resumeAttack();
+                } else {
+                    pauseAttack();
+                }
+            }
+        }
+        
+        function startAttack() {
+            isAttacking = true;
+            isPaused = false;
+            currentIteration = 0;
+            updateAttackInfo();
+            updateRunButton();
+        }
+        
+        function pauseAttack() {
+            isPaused = true;
+            updateRunButton();
+        }
+        
+        function resumeAttack() {
+            isPaused = false;
+            updateRunButton();
+        }
+        
+        function updateRunButton() {
+            const button = document.getElementById('runAttackBtn');
+            
+            if (!isAttacking || currentIteration >= iterations) {
+                button.textContent = "Run Attack";
+                button.classList.remove('paused');
+            } else if (isPaused) {
+                button.textContent = "Resume Attack";
+                button.classList.add('paused');
+            } else {
+                button.textContent = "Pause Attack";
+                button.classList.remove('paused');
+            }
         }
         
         // Initialize the scene when page loads
