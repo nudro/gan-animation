@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conceptual GAN Training</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+        }
+        input[type="number"], input[type="range"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .visualization-container {
+            position: relative;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            min-height: 500px;
+        }
+        .info-panel {
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            gap: 20px;
+        }
+        .stat-card {
+            flex: 1;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .progress-container {
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Conceptual GAN Training</h1>
+            <p>Watch a neural network learn to generate a panda image from random noise</p>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="trainingSteps">Training Steps:</label>
+                <input type="number" id="trainingSteps" min="10" max="1000" step="10" value="100">
+            </div>
+            
+            <div class="control-group">
+                <label for="learningRate">Learning Rate:</label>
+                <input type="range" id="learningRate" min="0.001" max="0.1" step="0.001" value="0.01">
+                <span id="learningRateValue">0.01</span>
+            </div>
+            
+            <div class="control-group">
+                <label for="noiseSize">Noise Dimension:</label>
+                <input type="number" id="noiseSize" min="10" max="200" step="10" value="100">
+            </div>
+            
+            <button id="startButton">Start Training</button>
+            <button id="resetButton">Reset</button>
+        </div>
+        
+        <div class="visualization-container" id="visualizationContainer">
+            <!-- Three.js canvas will go here -->
+            <div class="info-panel">
+                <div>Step: <span id="currentStep">0</span> / <span id="totalSteps">100</span></div>
+                <div>Discriminator Accuracy: <span id="discriminatorAccuracy">50%</span></div>
+                <div>Generator Loss: <span id="generatorLoss">High</span></div>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="label">Discriminator Realness Score</div>
+                <div id="realnessScore">0.10</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="realnessBar" style="width: 10%; background-color: #f44336;"></div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="label">Generator Progress</div>
+                <div id="generatorProgress">0%</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="generatorBar" style="width: 0%; background-color: #4CAF50;"></div>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="label">Training Progress</div>
+                <div id="trainingProgress">0%</div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="trainingBar" style="width: 0%; background-color: #2196F3;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Main Three.js components
+        let scene, camera, renderer;
+        
+        // GAN components
+        let generator, discriminator, gradientArrows = [];
+        let noiseVectors = [], noiseParticles = [];
+        let generatorOutput, targetImage;
+        let realnessScore = 0.1;
+        
+        // Training parameters
+        let trainingSteps = 100;
+        let currentStep = 0;
+        let learningRate = 0.01;
+        let noiseSize = 100;
+        let isTraining = false;
+        
+        // Add these new variables for the bubble/wave particles
+        let dataFlowParticles = [];
+        let feedbackFlowParticles = [];
+        
+        // Add these new variables for the gradient waves
+        let dataFlowWaves = [];
+        let feedbackFlowWaves = [];
+        
+        // DOM element references
+        const container = document.getElementById('visualizationContainer');
+        const learningRateSlider = document.getElementById('learningRate');
+        const learningRateValue = document.getElementById('learningRateValue');
+        const trainingStepsInput = document.getElementById('trainingSteps');
+        const noiseSizeInput = document.getElementById('noiseSize');
+        const startButton = document.getElementById('startButton');
+        const resetButton = document.getElementById('resetButton');
+        
+        // Stats elements
+        const currentStepDisplay = document.getElementById('currentStep');
+        const totalStepsDisplay = document.getElementById('totalSteps');
+        const discriminatorAccuracyDisplay = document.getElementById('discriminatorAccuracy');
+        const generatorLossDisplay = document.getElementById('generatorLoss');
+        const realnessScoreDisplay = document.getElementById('realnessScore');
+        const realnessBar = document.getElementById('realnessBar');
+        const generatorProgressDisplay = document.getElementById('generatorProgress');
+        const generatorBar = document.getElementById('generatorBar');
+        const trainingProgressDisplay = document.getElementById('trainingProgress');
+        const trainingBar = document.getElementById('trainingBar');
+        
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x121212);
+            
+            // Create camera - orthographic for 2D visualization
+            camera = new THREE.OrthographicCamera(-7, 7, 4, -4, 0.1, 1000);
+            camera.position.z = 10;
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, 500);
+            container.appendChild(renderer.domElement);
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Create GAN components
+            createGANComponents();
+            
+            // Create flow particles
+            createFlowParticles();
+            
+            // Create gradient waves instead of particles
+            createGradientWaves();
+            
+            // Add event listeners
+            learningRateSlider.addEventListener('input', function() {
+                learningRate = parseFloat(this.value);
+                learningRateValue.textContent = learningRate.toFixed(3);
+            });
+            
+            startButton.addEventListener('click', startTraining);
+            resetButton.addEventListener('click', resetTraining);
+            
+            // Initial render
+            renderer.render(scene, camera);
+        }
+        
+        // Create Generator, Discriminator and other components
+        function createGANComponents() {
+            // Create Generator (left side)
+            const genGeometry = new THREE.PlaneGeometry(3, 3);
+            const genMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x4CAF50,
+                transparent: true,
+                opacity: 0.7
+            });
+            generator = new THREE.Mesh(genGeometry, genMaterial);
+            generator.position.set(-4, 0, 0);
+            
+            // Add "G" to the Generator
+            createBigLabel("G", -4, 0, 1.2, 0x4CAF50);
+            
+            // Generator title - larger size parameter
+            createTextLabel("Generator", -4, -2, 0.6);
+            
+            // Create Discriminator (right side)
+            const discGeometry = new THREE.PlaneGeometry(2, 2);
+            const discMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xF44336,
+                transparent: true,
+                opacity: 0.7
+            });
+            discriminator = new THREE.Mesh(discGeometry, discMaterial);
+            discriminator.position.set(4, 0, 0);
+            
+            // Add "D" to the Discriminator
+            createBigLabel("D", 4, 0, 1.0, 0xF44336);
+            
+            // Discriminator title - larger size parameter
+            createTextLabel("Discriminator", 4, -1.5, 0.6);
+            
+            // Create noise input visualization (empty now)
+            createNoiseInputs();
+            
+            // Create the generator output (initially noise)
+            const noiseTexture = generateNoiseTexture(256, 256);
+            const outputMaterial = new THREE.MeshBasicMaterial({
+                map: new THREE.CanvasTexture(noiseTexture)
+            });
+            const outputGeometry = new THREE.PlaneGeometry(2.5, 2.5);
+            generatorOutput = new THREE.Mesh(outputGeometry, outputMaterial);
+            generatorOutput.position.set(0, 0.5, 0);
+            
+            // Create the target panda image
+            const targetGeometry = new THREE.PlaneGeometry(1.5, 1.5);
+            const targetMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFFFFF, // Will be replaced when image loads
+                transparent: true,
+                opacity: 0.3
+            });
+            targetImage = new THREE.Mesh(targetGeometry, targetMaterial);
+            targetImage.position.set(0, -1.5, 0);
+            
+            // Load the target panda image - using local file instead of remote URL
+            const pandaTexture = new THREE.TextureLoader();
+            pandaTexture.load(
+                'panda.jpg', // Use local file
+                function(texture) {
+                    targetImage.material.map = texture;
+                    targetImage.material.needsUpdate = true;
+                },
+                undefined, // onProgress callback not needed
+                function(err) {
+                    console.error('Error loading panda image:', err);
+                    // Fallback to remote URL if local file fails
+                    pandaTexture.load(
+                        'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f0/Giant_Panda_in_Beijing_Zoo_3.JPG/300px-Giant_Panda_in_Beijing_Zoo_3.JPG',
+                        function(texture) {
+                            targetImage.material.map = texture;
+                            targetImage.material.needsUpdate = true;
+                        }
+                    );
+                }
+            );
+            
+            createTextLabel("Target", 0, -2.5, 0.3);
+            
+            // Add elements to scene
+            scene.add(generator, discriminator, generatorOutput, targetImage);
+            
+            // Create initial gradient arrows
+            createGradientArrows();
+        }
+        
+        // Create text label helper function
+        function createTextLabel(text, x, y, size = 0.3) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; // Increased for better text quality
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+            context.fillStyle = '#FFFFFF';
+            context.font = 'bold 36px Arial'; // Larger size and explicitly Arial font
+            context.textAlign = 'center';
+            context.fillText(text, 256, 64);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true
+            });
+            const geometry = new THREE.PlaneGeometry(size * 8, size); // Wider to accommodate larger text
+            const textMesh = new THREE.Mesh(geometry, material);
+            textMesh.position.set(x, y, 0);
+            scene.add(textMesh);
+            return textMesh;
+        }
+        
+        // Create noise input visualization - removing the pink spots around Generator
+        function createNoiseInputs() {
+            // Clear existing noise vectors and particles
+            noiseVectors.forEach(vector => scene.remove(vector));
+            noiseVectors = [];
+            noiseParticles.forEach(particle => scene.remove(particle));
+            noiseParticles = [];
+            
+            // We're completely removing the particles around the Generator
+            // This function now does nothing, but we keep it for compatibility
+        }
+        
+        // Create gradient arrows with more dynamic effects
+        function createGradientArrows() {
+            // Remove existing arrows
+            gradientArrows.forEach(arrow => scene.remove(arrow));
+            gradientArrows = [];
+            
+            // Data flow arrow (Gen to Disc) - Blue arrow showing generated data
+            const dataArrow = createArrow(-2.5, 0, 3, 0, 0x3F51B5);
+            gradientArrows.push(dataArrow);
+            scene.add(dataArrow);
+            
+            // Feedback arrow (Disc to Gen) - Orange/red arrow showing gradient feedback
+            const feedbackArrow = createArrow(3, 0.5, -2.5, 0.5, 0xFF9800);
+            gradientArrows.push(feedbackArrow);
+            scene.add(feedbackArrow);
+        }
+        
+        // Helper to create arrow
+        function createArrow(fromX, fromY, toX, toY, color) {
+            // Create main line
+            const points = [
+                new THREE.Vector3(fromX, fromY, 0),
+                new THREE.Vector3(toX, toY, 0)
+            ];
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const lineMaterial = new THREE.LineBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.8
+            });
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            
+            // Create arrowhead
+            const headLength = 0.3;
+            const headWidth = 0.15;
+            const direction = new THREE.Vector3(toX - fromX, toY - fromY, 0).normalize();
+            
+            const arrowHeadPoint1 = new THREE.Vector3(
+                toX - direction.x * headLength + direction.y * headWidth,
+                toY - direction.y * headLength - direction.x * headWidth,
+                0
+            );
+            
+            const arrowHeadPoint2 = new THREE.Vector3(
+                toX - direction.x * headLength - direction.y * headWidth,
+                toY - direction.y * headLength + direction.x * headWidth,
+                0
+            );
+            
+            const headPoints = [
+                new THREE.Vector3(toX, toY, 0),
+                arrowHeadPoint1,
+                new THREE.Vector3(toX, toY, 0),
+                arrowHeadPoint2
+            ];
+            
+            const headGeometry = new THREE.BufferGeometry().setFromPoints(headPoints);
+            const arrowHead = new THREE.Line(headGeometry, lineMaterial);
+            
+            // Group the line and arrowhead
+            const arrowGroup = new THREE.Group();
+            arrowGroup.add(line);
+            arrowGroup.add(arrowHead);
+            
+            return arrowGroup;
+        }
+        
+        // Generate noise texture
+        function generateNoiseTexture(width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const noise = Math.random() * 255;
+                data[i] = noise;     // R
+                data[i + 1] = noise; // G
+                data[i + 2] = noise; // B
+                data[i + 3] = 255;   // A
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            return canvas;
+        }
+        
+        // Blend noise and panda image based on training progress
+        function updateGeneratorOutput(progress) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas with a solid color first
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, 256, 256);
+            
+            // Begin with pure noise
+            const noiseCanvas = generateNoiseTexture(256, 256);
+            
+            // In early stages, show primarily noise with hints of structure
+            if (progress < 0.3) {
+                // Noise dominates early
+                ctx.globalAlpha = 1;
+                ctx.drawImage(noiseCanvas, 0, 0);
+                
+                // Hint at panda structure very faintly
+                if (targetImage.material.map && targetImage.material.map.image) {
+                    ctx.globalAlpha = progress * 0.5; // Very subtle at first
+                    ctx.drawImage(targetImage.material.map.image, 0, 0, 256, 256);
+                    
+                    // Apply heavy distortion to the early image
+                    const distortionLevel = 1 - progress * 2; // Starts high, decreases
+                    const imageData = ctx.getImageData(0, 0, 256, 256);
+                    const data = imageData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (Math.random() < 0.3) {
+                            // Distort pixels randomly
+                            data[i] = Math.min(255, data[i] + (Math.random() * 70 - 35));
+                            data[i + 1] = Math.min(255, data[i + 1] + (Math.random() * 70 - 35));
+                            data[i + 2] = Math.min(255, data[i + 2] + (Math.random() * 70 - 35));
+                        }
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                }
+            }
+            // Middle stages - show emerging panda form with less noise
+            else if (progress < 0.7) {
+                // Draw reduced noise first
+                ctx.globalAlpha = 1 - (progress * 0.9);
+                ctx.drawImage(noiseCanvas, 0, 0);
+                
+                // Draw panda with moderate clarity
+                if (targetImage.material.map && targetImage.material.map.image) {
+                    ctx.globalAlpha = progress * 0.9;
+                    ctx.drawImage(targetImage.material.map.image, 0, 0, 256, 256);
+                    
+                    // Apply medium distortion
+                    const distortionLevel = 0.7 - progress; // Decreases as we progress
+                    const imageData = ctx.getImageData(0, 0, 256, 256);
+                    const data = imageData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (Math.random() < distortionLevel * 0.4) {
+                            // Less aggressive distortion
+                            data[i] = Math.min(255, data[i] + (Math.random() * 40 - 20));
+                            data[i + 1] = Math.min(255, data[i + 1] + (Math.random() * 40 - 20));
+                            data[i + 2] = Math.min(255, data[i + 2] + (Math.random() * 40 - 20));
+                        }
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                }
+            }
+            // Final stages - clear panda with minimal noise and distortion
+            else {
+                // Minimal noise
+                ctx.globalAlpha = 0.1; // Just a hint of noise texture
+                ctx.drawImage(noiseCanvas, 0, 0);
+                
+                // Clear panda image
+                if (targetImage.material.map && targetImage.material.map.image) {
+                    ctx.globalAlpha = 0.9;
+                    ctx.drawImage(targetImage.material.map.image, 0, 0, 256, 256);
+                    
+                    // Apply very subtle enhancement
+                    const imageData = ctx.getImageData(0, 0, 256, 256);
+                    const data = imageData.data;
+                    
+                    // Very minor adjustments for small details
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (Math.random() < 0.05) {
+                            // Very subtle refinement
+                            data[i] = Math.min(255, data[i] + (Math.random() * 10 - 5));
+                            data[i + 1] = Math.min(255, data[i + 1] + (Math.random() * 10 - 5));
+                            data[i + 2] = Math.min(255, data[i + 2] + (Math.random() * 10 - 5));
+                        }
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                    
+                    // Final enhancement pass to sharpen details
+                    ctx.globalAlpha = 0.2;
+                    ctx.drawImage(targetImage.material.map.image, 0, 0, 256, 256);
+                }
+            }
+            
+            // Update generator output texture
+            generatorOutput.material.map = new THREE.CanvasTexture(canvas);
+            generatorOutput.material.needsUpdate = true;
+        }
+        
+        // Update realness score display
+        function updateRealnessScore(score) {
+            realnessScoreDisplay.textContent = score.toFixed(2);
+            realnessBar.style.width = (score * 100) + '%';
+            
+            // Change color based on score
+            if (score < 0.3) {
+                realnessBar.style.backgroundColor = '#f44336'; // Red
+            } else if (score < 0.7) {
+                realnessBar.style.backgroundColor = '#FF9800'; // Orange
+            } else {
+                realnessBar.style.backgroundColor = '#4CAF50'; // Green
+            }
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            renderer.setSize(container.clientWidth, 500);
+        }
+        
+        // Start training process
+        function startTraining() {
+            if (isTraining) return;
+            
+            // Get parameters from inputs
+            trainingSteps = parseInt(trainingStepsInput.value);
+            noiseSize = parseInt(noiseSizeInput.value);
+            
+            // Update displays
+            totalStepsDisplay.textContent = trainingSteps;
+            currentStep = 0;
+            
+            // Update noise inputs
+            createNoiseInputs();
+            
+            // Reset and recreate gradient waves
+            createGradientWaves();
+            
+            // Start the training loop
+            isTraining = true;
+            startButton.disabled = true;
+            train();
+        }
+        
+        // Reset training state
+        function resetTraining() {
+            isTraining = false;
+            currentStep = 0;
+            realnessScore = 0.1;
+            
+            // Update displays
+            currentStepDisplay.textContent = '0';
+            discriminatorAccuracyDisplay.textContent = '90%'; // Start high
+            generatorLossDisplay.textContent = 'High';
+            updateRealnessScore(realnessScore);
+            
+            // Reset progress bars
+            generatorProgressDisplay.textContent = '0%';
+            generatorBar.style.width = '0%';
+            trainingProgressDisplay.textContent = '0%';
+            trainingBar.style.width = '0%';
+            
+            // Reset generator output
+            const noiseTexture = generateNoiseTexture(256, 256);
+            generatorOutput.material.map = new THREE.CanvasTexture(noiseTexture);
+            generatorOutput.material.needsUpdate = true;
+            
+            // Reset gradient waves
+            createGradientWaves();
+            
+            // Re-enable start button
+            startButton.disabled = false;
+            
+            // Render the reset state
+            animateNoiseParticles(0);
+            animateGradientArrows(0);
+            renderer.render(scene, camera);
+        }
+        
+        // Main training loop
+        function train() {
+            if (!isTraining || currentStep >= trainingSteps) {
+                if (currentStep >= trainingSteps) {
+                    isTraining = false;
+                    startButton.disabled = false;
+                }
+                return;
+            }
+            
+            // Increment step counter
+            currentStep++;
+            
+            // Calculate progress
+            const progress = currentStep / trainingSteps;
+            
+            // Update generator output based on progress
+            updateGeneratorOutput(progress);
+            
+            // Update realness score - modified to never exceed 0.55 and converge to 0.50
+            realnessScore = calculateRealnessScore(progress);
+            
+            // Update displays
+            currentStepDisplay.textContent = currentStep;
+            updateRealnessScore(realnessScore);
+            
+            // Update discriminator accuracy - modified to waver and converge to 50%
+            let accuracy = calculateDiscriminatorAccuracy(progress);
+            discriminatorAccuracyDisplay.textContent = Math.round(accuracy) + '%';
+            
+            // Update generator loss (decreases over time)
+            if (progress < 0.3) {
+                generatorLossDisplay.textContent = 'High';
+            } else if (progress < 0.7) {
+                generatorLossDisplay.textContent = 'Medium';
+            } else {
+                generatorLossDisplay.textContent = 'Low';
+            }
+            
+            // Update progress bars
+            const genProgress = Math.round(progress * 100);
+            generatorProgressDisplay.textContent = genProgress + '%';
+            generatorBar.style.width = genProgress + '%';
+            
+            trainingProgressDisplay.textContent = genProgress + '%';
+            trainingBar.style.width = genProgress + '%';
+            
+            // Animate particles and arrows
+            animateNoiseParticles(progress);
+            animateGradientArrows(progress);
+            
+            // Render the scene
+            renderer.render(scene, camera);
+            
+            // Schedule next step with a delay based on learning rate
+            // Higher learning rate = faster animation
+            const stepDelay = Math.max(50, 300 - (learningRate * 2000));
+            setTimeout(train, stepDelay);
+        }
+        
+        // Calculate realness score that never exceeds 0.55 and converges to 0.50
+        function calculateRealnessScore(progress) {
+            // Start with low score
+            const startScore = 0.10;
+            
+            // Target final score of 0.50 (with small variation)
+            const finalScore = 0.50 + (Math.random() * 0.02 - 0.01); // 0.49-0.51
+            
+            // Maximum allowed score during training (never exceeds 0.55)
+            const maxAllowedScore = 0.55;
+            
+            // Base calculation following a non-linear curve
+            let baseScore;
+            if (progress < 0.7) {
+                // In early and mid training, score rises with some oscillation
+                baseScore = startScore + (0.4 * Math.pow(progress, 0.8));
+                
+                // Add subtle oscillation early on
+                const oscillationAmplitude = 0.08 * (1 - progress);
+                baseScore += oscillationAmplitude * Math.sin(progress * 15);
+            } else {
+                // In late training, gradually converge to final score of 0.50
+                const lateProgress = (progress - 0.7) / 0.3; // 0 to 1 in late phase
+                baseScore = 0.50 + (0.05 * (1 - Math.pow(lateProgress, 0.5)));
+            }
+            
+            // Add small random noise (smaller as training progresses)
+            const noiseAmount = 0.05 * (1 - progress * 0.5);
+            const noise = (Math.random() * noiseAmount) - (noiseAmount / 2);
+            
+            // Calculate final score with constraints
+            let score = baseScore + noise;
+            
+            // Cap the maximum score to ensure it never exceeds 0.55
+            score = Math.min(maxAllowedScore, score);
+            
+            // Ensure score is within valid range
+            score = Math.min(maxAllowedScore, Math.max(0.01, score));
+            
+            // As we approach the end, ensure convergence to 0.50
+            if (progress > 0.9) {
+                const finalWeight = (progress - 0.9) * 10; // 0 to 1 in final 10%
+                score = score * (1 - finalWeight) + finalScore * finalWeight;
+            }
+            
+            return score;
+        }
+        
+        // Calculate discriminator accuracy that wavers and converges to 50%
+        function calculateDiscriminatorAccuracy(progress) {
+            // Start high (good at distinguishing real/fake in early stages)
+            // Have oscillations that dampen over time
+            // End with convergence to around 50% (can't distinguish anymore)
+            
+            // Initial high accuracy (starts at ~90%)
+            const initialAccuracy = 90;
+            
+            // Final accuracy around 50% (with slight randomness)
+            const finalAccuracy = 50 + (Math.random() * 3 - 1.5);
+            
+            // Create oscillation with decreasing amplitude
+            const oscillationAmplitude = 40 * (1 - progress);
+            const oscillationFrequency = 8; // How many full oscillations during training
+            const oscillation = oscillationAmplitude * Math.sin(progress * oscillationFrequency * Math.PI);
+            
+            // Introduce some random noise that decreases over time
+            const noiseAmplitude = 15 * (1 - progress);
+            const noise = (Math.random() * noiseAmplitude) - (noiseAmplitude / 2);
+            
+            // Calculate accuracy with smooth transition from initial to final, plus oscillation and noise
+            const baseAccuracy = initialAccuracy - (initialAccuracy - finalAccuracy) * Math.pow(progress, 0.7);
+            let accuracy = baseAccuracy + oscillation + noise;
+            
+            // Add more pronounced struggle in middle training phases
+            if (progress > 0.3 && progress < 0.7) {
+                // Add a second, higher frequency oscillation in mid-training
+                const midTrainingOscillation = 10 * Math.sin(progress * 20 * Math.PI);
+                accuracy += midTrainingOscillation;
+            }
+            
+            // Constrain to valid range (0-100%)
+            accuracy = Math.min(100, Math.max(0, accuracy));
+            
+            return accuracy;
+        }
+        
+        // Animate noise particles
+        function animateNoiseParticles(progress) {
+            noiseParticles.forEach((particle, i) => {
+                // Pulse effect
+                const scale = 1 + 0.3 * Math.sin((progress * 10) + (i * 0.2));
+                particle.scale.set(scale, scale, 1);
+                
+                // Color based on progress (whiter as training progresses)
+                const color = new THREE.Color();
+                color.setRGB(1, 0.7 + progress * 0.3, 0.7 + progress * 0.3);
+                particle.material.color = color;
+            });
+        }
+        
+        // Animate gradient arrows with more dynamic effects
+        function animateGradientArrows(progress) {
+            if (gradientArrows.length >= 2) {
+                // Data flow arrow (Gen to Disc) - Blue arrow showing generated data
+                const dataArrow = gradientArrows[0];
+                
+                // Create more dynamic pulsing based on progress
+                const dataPhase = (Math.sin(progress * 30) + 1) / 2;
+                
+                // Change color based on training progress - from cyan (untrained) to blue (trained)
+                const dataColorValue = new THREE.Color();
+                const blueValue = 0.4 + progress * 0.6; // More blue as training progresses
+                dataColorValue.setRGB(0.2, 0.4 + progress * 0.3, blueValue);
+                
+                // Apply color and opacity changes to the arrow
+                dataArrow.children.forEach(child => {
+                    child.material.color = dataColorValue;
+                    child.material.opacity = 0.4 + 0.6 * dataPhase;
+                });
+                
+                // Feedback arrow (Disc to Gen) - Orange/red arrow showing gradient feedback
+                const feedbackArrow = gradientArrows[1];
+                const feedbackPhase = (Math.sin(progress * 30 + Math.PI) + 1) / 2;
+                
+                // Change from red (untrained) to orange-gold (trained)
+                const feedbackColorValue = new THREE.Color();
+                feedbackColorValue.setRGB(
+                    1.0, // Red stays consistent
+                    0.3 + progress * 0.5, // Green increases (towards yellow/gold)
+                    0.0 + progress * 0.2  // Blue increases slightly
+                );
+                
+                // Apply color and opacity changes to the arrow
+                feedbackArrow.children.forEach(child => {
+                    child.material.color = feedbackColorValue;
+                    child.material.opacity = 0.4 + 0.6 * feedbackPhase;
+                });
+                
+                // Animate the spiky waves along the arrows
+                animateGradientWaves(progress);
+            }
+        }
+        
+        // Create flow particles function to visualize data and gradient flow
+        function createFlowParticles() {
+            // Clear any existing particles
+            dataFlowParticles.forEach(p => scene.remove(p));
+            dataFlowParticles = [];
+            
+            feedbackFlowParticles.forEach(p => scene.remove(p));
+            feedbackFlowParticles = [];
+            
+            // Create data flow particles (Generator to Discriminator)
+            for (let i = 0; i < 15; i++) {
+                const geometry = new THREE.CircleGeometry(0.05, 12);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0x3F51B5, // Blue
+                    transparent: true,
+                    opacity: 0.0 // Start invisible
+                });
+                const particle = new THREE.Mesh(geometry, material);
+                
+                // Initialize at start position with random offset
+                const yOffset = (Math.random() - 0.5) * 0.5;
+                particle.position.set(-2.5, yOffset, 0);
+                
+                // Store properties for animation
+                particle.userData = {
+                    speed: 0.01 + Math.random() * 0.02,
+                    phase: Math.random() * Math.PI * 2,
+                    amplitude: 0.05 + Math.random() * 0.05,
+                    progress: Math.random(), // Random initial progress
+                    active: false
+                };
+                
+                dataFlowParticles.push(particle);
+                scene.add(particle);
+            }
+            
+            // Create feedback flow particles (Discriminator to Generator)
+            for (let i = 0; i < 12; i++) {
+                const geometry = new THREE.CircleGeometry(0.06, 12);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0xFF9800, // Orange
+                    transparent: true,
+                    opacity: 0.0 // Start invisible
+                });
+                const particle = new THREE.Mesh(geometry, material);
+                
+                // Initialize at start position with random offset
+                const yOffset = 0.5 + (Math.random() - 0.5) * 0.3;
+                particle.position.set(3, yOffset, 0);
+                
+                // Store properties for animation
+                particle.userData = {
+                    speed: 0.01 + Math.random() * 0.02,
+                    phase: Math.random() * Math.PI * 2,
+                    amplitude: 0.07 + Math.random() * 0.08,
+                    progress: Math.random(), // Random initial progress
+                    active: false
+                };
+                
+                feedbackFlowParticles.push(particle);
+                scene.add(particle);
+            }
+        }
+        
+        // Create big letter label for Generator/Discriminator
+        function createBigLabel(text, x, y, size = 1.0, color = 0xFFFFFF) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            // Draw transparent background
+            context.fillStyle = 'rgba(0,0,0,0)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw the letter
+            context.fillStyle = '#FFFFFF';
+            context.font = 'bold 180px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 128, 128);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0.9
+            });
+            const geometry = new THREE.PlaneGeometry(size, size);
+            const textMesh = new THREE.Mesh(geometry, material);
+            textMesh.position.set(x, y, 0.1); // Slightly in front
+            scene.add(textMesh);
+            return textMesh;
+        }
+        
+        // Create spiky gradient waves
+        function createGradientWaves() {
+            // Clear any existing waves
+            dataFlowWaves.forEach(w => scene.remove(w));
+            dataFlowWaves = [];
+            
+            feedbackFlowWaves.forEach(w => scene.remove(w));
+            feedbackFlowWaves = [];
+            
+            // Create forward data flow waves (Generator to Discriminator)
+            for (let i = 0; i < 3; i++) {
+                const points = [];
+                const numPoints = 50;
+                const amplitude = 0.05;
+                
+                // Base Y position for this wave
+                const baseY = -0.2 + i * 0.2;
+                
+                // Create flat line initially
+                for (let j = 0; j < numPoints; j++) {
+                    const x = -2.5 + (5.5 / (numPoints - 1)) * j;
+                    points.push(new THREE.Vector3(x, baseY, 0));
+                }
+                
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({
+                    color: 0x3F51B5, // Blue
+                    transparent: true,
+                    opacity: 0.5,
+                    linewidth: 2
+                });
+                
+                const wave = new THREE.Line(geometry, material);
+                wave.userData = {
+                    baseY: baseY,
+                    phase: Math.random() * Math.PI * 2,
+                    speed: 0.05 + Math.random() * 0.05,
+                    numPoints: numPoints,
+                    points: points.slice(),
+                    waveFreq: 2 + i * 0.5
+                };
+                
+                dataFlowWaves.push(wave);
+                scene.add(wave);
+            }
+            
+            // Create backward gradient flow waves (Discriminator to Generator)
+            for (let i = 0; i < 3; i++) {
+                const points = [];
+                const numPoints = 50;
+                const amplitude = 0.05;
+                
+                // Base Y position for this wave
+                const baseY = 0.4 + i * 0.2;
+                
+                // Create flat line initially
+                for (let j = 0; j < numPoints; j++) {
+                    const x = 3 - (5.5 / (numPoints - 1)) * j;
+                    points.push(new THREE.Vector3(x, baseY, 0));
+                }
+                
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const material = new THREE.LineBasicMaterial({
+                    color: 0xFF9800, // Orange
+                    transparent: true,
+                    opacity: 0.5,
+                    linewidth: 2
+                });
+                
+                const wave = new THREE.Line(geometry, material);
+                wave.userData = {
+                    baseY: baseY,
+                    phase: Math.random() * Math.PI * 2,
+                    speed: 0.05 + Math.random() * 0.05,
+                    numPoints: numPoints,
+                    points: points.slice(),
+                    waveFreq: 2 + i * 0.5
+                };
+                
+                feedbackFlowWaves.push(wave);
+                scene.add(wave);
+            }
+        }
+        
+        // Animate spiky gradient waves
+        function animateGradientWaves(progress) {
+            // Forward data flow waves (Generator to Discriminator)
+            dataFlowWaves.forEach((wave, waveIndex) => {
+                const { baseY, phase, points, numPoints, waveFreq } = wave.userData;
+                const time = Date.now() * 0.001;
+                
+                // Adjust wave intensity based on training progress
+                const intensity = 0.05 + progress * 0.15;
+                const spikeFreq = 1 + progress * 4; // More spikes as training progresses
+                const speed = wave.userData.speed * (1 + progress * 2);
+                
+                // Update each point in the wave
+                for (let i = 0; i < numPoints; i++) {
+                    const t = i / (numPoints - 1);
+                    // Moving wave from left to right
+                    const movingPhase = (time * speed + t) % 1;
+                    
+                    // Create spiky wave pattern with occasional large spikes
+                    let spikeHeight = 0;
+                    
+                    // Base wave
+                    const baseWave = Math.sin(t * 10 + time * speed * 2 + phase + waveIndex) * 0.05;
+                    
+                    // Add spikes based on progress - more aggressive as training progresses
+                    if (progress > 0.05) {
+                        // Calculate position-dependent spikes
+                        const spikePositionFactor = Math.sin(t * spikeFreq * 10 + time * 2);
+                        const spikeTrigger = 0.7 - progress * 0.3; // Lower threshold = more spikes
+                        
+                        if (spikePositionFactor > spikeTrigger) {
+                            // Create a sharp spike with height based on the excess above threshold
+                            const excessFactor = (spikePositionFactor - spikeTrigger) / (1 - spikeTrigger);
+                            spikeHeight = excessFactor * excessFactor * intensity * (0.2 + progress);
+                        }
+                    }
+                    
+                    // Apply combined height
+                    points[i].y = baseY + baseWave + spikeHeight;
+                }
+                
+                // Update wave geometry
+                wave.geometry.setFromPoints(points);
+                wave.geometry.attributes.position.needsUpdate = true;
+                
+                // Update wave color - brighter blue as training progresses
+                const waveColor = new THREE.Color();
+                waveColor.setRGB(
+                    0.2 + progress * 0.1,
+                    0.4 + progress * 0.3,
+                    0.9 + progress * 0.1
+                );
+                wave.material.color = waveColor;
+                
+                // Update wave opacity
+                wave.material.opacity = 0.3 + progress * 0.7;
+            });
+            
+            // Backward gradient flow waves (Discriminator to Generator)
+            feedbackFlowWaves.forEach((wave, waveIndex) => {
+                const { baseY, phase, points, numPoints, waveFreq } = wave.userData;
+                const time = Date.now() * 0.001;
+                
+                // Adjust wave intensity based on training progress
+                const intensity = 0.05 + progress * 0.2; // Stronger gradients as training progresses
+                const spikeFreq = 1.5 + progress * 5; // More spikes as training progresses
+                const speed = wave.userData.speed * (1 + progress * 2);
+                
+                // Update each point in the wave
+                for (let i = 0; i < numPoints; i++) {
+                    const t = i / (numPoints - 1);
+                    // Moving wave from right to left (reverse direction)
+                    const movingPhase = (time * speed + (1-t)) % 1;
+                    
+                    // Create spiky wave pattern with occasional large spikes
+                    let spikeHeight = 0;
+                    
+                    // Base wave
+                    const baseWave = Math.sin(t * 12 + time * speed * 2 + phase + waveIndex) * 0.05;
+                    
+                    // Add spikes based on progress - more aggressive as training progresses
+                    if (progress > 0.05) {
+                        // Calculate position-dependent spikes
+                        const spikePositionFactor = Math.sin(t * spikeFreq * 8 + time * 3);
+                        const spikeTrigger = 0.6 - progress * 0.4; // Lower threshold = more spikes
+                        
+                        if (spikePositionFactor > spikeTrigger) {
+                            // Create a sharp spike with height based on the excess above threshold
+                            const excessFactor = (spikePositionFactor - spikeTrigger) / (1 - spikeTrigger);
+                            spikeHeight = excessFactor * excessFactor * intensity * (0.3 + progress);
+                            
+                            // Add some randomness to spikes
+                            if (Math.random() < 0.1) {
+                                spikeHeight *= 1.5; // Occasional extra-high spike
+                            }
+                        }
+                    }
+                    
+                    // Apply combined height
+                    points[i].y = baseY + baseWave + spikeHeight;
+                }
+                
+                // Update wave geometry
+                wave.geometry.setFromPoints(points);
+                wave.geometry.attributes.position.needsUpdate = true;
+                
+                // Update wave color - brighter orange-gold as training progresses
+                const waveColor = new THREE.Color();
+                waveColor.setRGB(
+                    1.0,
+                    0.3 + progress * 0.6,
+                    0.0 + progress * 0.3
+                );
+                wave.material.color = waveColor;
+                
+                // Update wave opacity
+                wave.material.opacity = 0.3 + progress * 0.7;
+            });
+        }
+        
+        // Initialize the scene and start
+        init();
+    </script>
+</body>
+</html> 
