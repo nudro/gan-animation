@@ -12,6 +12,10 @@ This project provides a conceptual visualization of how GANs work, showing the a
 2. The Discriminator attempting to distinguish between real and generated images
 3. The flow of gradient information between the networks during training
 
+**Note: This is a purely conceptual visualization. No actual neural network training is occurring - this is a simulation designed for educational purposes to illustrate GAN concepts.**
+
+For a detailed explanation of how GANs work in practice, including the mathematics and training process, please read: [A Brief Overview of GANs](https://ordun.ghost.io/2021/03/05/a-brief-overview-of-gans/)
+
 ## Features
 
 - **Interactive Training Process**: Adjust training steps, learning rate, and noise dimensions in real-time
@@ -81,6 +85,8 @@ This visualization helps explain:
 - Why the Discriminator accuracy eventually converges to 50%
 - How gradient information flows between networks
 - The progressive transformation from random noise to structured output
+
+Remember that while this visualization illustrates the key concepts, actual GAN implementations involve complex mathematical operations, loss functions, and optimization techniques that are not depicted here. This simulation focuses on the high-level concepts rather than the computational details.
 
 ## Credits
 
