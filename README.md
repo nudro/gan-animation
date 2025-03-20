@@ -32,8 +32,8 @@ For a detailed explanation of how GANs work in practice, including the mathemati
 ### Quick Start
 1. Clone this repository
 ```bash
-git clone https://github.com/nudro/gan-animation.git
-cd gan-animation
+git clone https://github.com/nudro/ganimation.git
+cd ganimation
 ```
 
 2. Run the visualization server
