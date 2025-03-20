@@ -339,18 +339,23 @@
             
             // Create a canvas for the patch texture
             const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 256;
+            canvas.width = 512;  // Increased resolution for better detail
+            canvas.height = 512;
             const ctx = canvas.getContext('2d');
             
-            // Fill with random noise initially
-            for (let y = 0; y < canvas.height; y++) {
-                for (let x = 0; x < canvas.width; x++) {
-                    const r = Math.floor(Math.random() * 255);
-                    const g = Math.floor(Math.random() * 255);
-                    const b = Math.floor(Math.random() * 255);
-                    ctx.fillStyle = `rgb(${r},${g},${b})`;
-                    ctx.fillRect(x, y, 1, 1);
+            // Fill with a more structured, colorful initial pattern
+            if (attackType === 'targeted') {
+                createColorfulTruckPattern(ctx, canvas);
+            } else {
+                // For untargeted attack, still use random noise initially
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < canvas.width; x++) {
+                        const r = Math.floor(Math.random() * 255);
+                        const g = Math.floor(Math.random() * 255);
+                        const b = Math.floor(Math.random() * 255);
+                        ctx.fillStyle = `rgb(${r},${g},${b})`;
+                        ctx.fillRect(x, y, 1, 1);
+                    }
                 }
             }
             
@@ -363,8 +368,85 @@
             });
             
             patch = new THREE.Mesh(patchGeometry, patchMaterial);
-            patch.position.set(-1.5, 0.5, 0.2); // Position near person
+            
+            // Position patch in front of the person
+            patch.position.set(personMesh.position.x, personMesh.position.y + 0.5, personMesh.position.z + 0.3);
             scene.add(patch);
+        }
+        
+        function createColorfulTruckPattern(ctx, canvas) {
+            // Create a vibrant base with gradient
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, '#ff3e3e');   // Bright red
+            gradient.addColorStop(0.3, '#ff9d00');  // Orange
+            gradient.addColorStop(0.6, '#ffee00');  // Yellow
+            gradient.addColorStop(1, '#8B4513');    // Brown (truck color)
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add some geometric patterns (similar to the reference image)
+            
+            // Add vertical stripe pattern
+            for (let i = 0; i < 12; i++) {
+                ctx.fillStyle = `rgba(255, 255, 255, 0.4)`;
+                const xPos = (i * canvas.width / 12);
+                ctx.fillRect(xPos, 0, canvas.width/40, canvas.height);
+            }
+            
+            // Add horizontal divisions
+            for (let i = 0; i < 8; i++) {
+                ctx.fillStyle = `rgba(0, 0, 0, 0.2)`;
+                const yPos = (i * canvas.height / 8);
+                ctx.fillRect(0, yPos, canvas.width, 2);
+            }
+            
+            // Add some bright squares in a pattern (inspired by the reference image)
+            for (let y = 0; y < 4; y++) {
+                for (let x = 0; x < 4; x++) {
+                    if ((x + y) % 2 === 0) {
+                        const color = [
+                            '#ff0000', '#00ff00', '#0000ff', 
+                            '#ffff00', '#ff00ff', '#00ffff'
+                        ][Math.floor(Math.random() * 6)];
+                        
+                        ctx.fillStyle = color;
+                        ctx.fillRect(
+                            x * (canvas.width / 4) + canvas.width / 16, 
+                            y * (canvas.height / 4) + canvas.height / 16, 
+                            canvas.width / 8, 
+                            canvas.height / 8
+                        );
+                    }
+                }
+            }
+            
+            // Add some truck-like features in the center
+            ctx.fillStyle = '#8B4513'; // Brown
+            ctx.fillRect(canvas.width * 0.25, canvas.height * 0.4, canvas.width * 0.5, canvas.height * 0.2);
+            
+            ctx.fillStyle = '#333';  // Dark gray
+            ctx.fillRect(canvas.width * 0.3, canvas.height * 0.3, canvas.width * 0.4, canvas.height * 0.1);
+            
+            // Add wheels
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(canvas.width * 0.3, canvas.height * 0.65, canvas.width * 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(canvas.width * 0.7, canvas.height * 0.65, canvas.width * 0.05, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add some noise pattern for adversarial features
+            for (let i = 0; i < 1000; i++) {
+                const x = Math.floor(Math.random() * canvas.width);
+                const y = Math.floor(Math.random() * canvas.height);
+                const size = Math.floor(Math.random() * 4) + 1;
+                
+                ctx.fillStyle = `rgba(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255}, 0.5)`;
+                ctx.fillRect(x, y, size, size);
+            }
         }
         
         function createBoundingBox() {
@@ -433,39 +515,67 @@
         function applyTargetedPerturbation(ctx, canvas, texture) {
             const progress = currentIteration / iterations;
             
-            // More structured perturbation for targeted attack
-            // As iterations increase, make more truck-like patterns
+            // Preserve the colorful truck-like pattern but add perturbations
+            if (currentIteration === 0) {
+                // Reset to the initial colorful pattern on first iteration
+                createColorfulTruckPattern(ctx, canvas);
+            }
             
-            for (let i = 0; i < 50; i++) {
-                // Generate more structured perturbations as iterations increase
-                let x = Math.floor(Math.random() * canvas.width);
-                let y = Math.floor(Math.random() * canvas.height);
-                let width = Math.floor(Math.random() * 20) + 5;
-                let height = Math.floor(Math.random() * 20) + 5;
+            // Add perturbations that enhance truck-like features as iterations progress
+            const numPerturbations = Math.floor(30 + (progress * 70)); // More perturbations as we progress
+            
+            for (let i = 0; i < numPerturbations; i++) {
+                // Target areas that would enhance truck-like features
+                let x, y, width, height;
+                
+                if (Math.random() < 0.6) {
+                    // Focus perturbations on the truck-like regions
+                    x = canvas.width * (0.25 + (Math.random() * 0.5));
+                    y = canvas.height * (0.3 + (Math.random() * 0.4));
+                    width = Math.floor(Math.random() * 30) + 5;
+                    height = Math.floor(Math.random() * 20) + 5;
+                } else {
+                    // Random perturbations elsewhere
+                    x = Math.floor(Math.random() * canvas.width);
+                    y = Math.floor(Math.random() * canvas.height);
+                    width = Math.floor(Math.random() * 15) + 3;
+                    height = Math.floor(Math.random() * 15) + 3;
+                }
                 
                 // Colors shift toward brown/truck-like as attack progresses
                 const r = Math.min(255, Math.max(0, 139 + (Math.random() - 0.5) * 255 * epsilon));
                 const g = Math.min(255, Math.max(0, 69 + (Math.random() - 0.5) * 255 * epsilon));
                 const b = Math.min(255, Math.max(0, 19 + (Math.random() - 0.5) * 255 * epsilon));
                 
-                ctx.fillStyle = `rgb(${r},${g},${b})`;
-                
-                // Add more rectangular shapes as iterations progress (truck-like)
-                if (progress > 0.5 && Math.random() > 0.5) {
-                    width = Math.floor(Math.random() * 40) + 20;
-                    height = Math.floor(Math.random() * 20) + 10;
+                // Add some high-contrast elements in later stages
+                if (progress > 0.7 && Math.random() > 0.6) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#000000' : '#ffffff';
+                } else {
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
                 }
                 
                 ctx.fillRect(x, y, width, height);
             }
             
             // Add some vertical lines in later stages (representing truck features)
-            if (progress > 0.7) {
-                for (let i = 0; i < 5; i++) {
-                    const x = Math.floor(Math.random() * canvas.width);
+            if (progress > 0.5) {
+                for (let i = 0; i < 3; i++) {
+                    const x = canvas.width * (0.3 + (i * 0.2));
                     ctx.fillStyle = "#333333";
-                    ctx.fillRect(x, 0, 5, canvas.height);
+                    ctx.fillRect(x, canvas.height * 0.2, 4, canvas.height * 0.4);
                 }
+            }
+            
+            // Enhance wheel-like features in final stages
+            if (progress > 0.8) {
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(canvas.width * 0.3, canvas.height * 0.65, canvas.width * 0.07, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(canvas.width * 0.7, canvas.height * 0.65, canvas.width * 0.07, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
         
