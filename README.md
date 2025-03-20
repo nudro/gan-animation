@@ -1,6 +1,6 @@
 # Conceptual GAN Training Visualization
 
-An interactive 3D visualization of Generative Adversarial Network (GAN) training dynamics, showing how a generator network learns to produce realistic panda images from random noise.
+An interactive 2D visualization of Generative Adversarial Network (GAN) training dynamics, showing how a generator network learns to produce realistic panda images from random noise.
 
 ![GAN Training Visualization](main.png)
 
@@ -28,7 +28,7 @@ This project provides a conceptual visualization of how GANs work, showing the a
 ### Quick Start
 1. Clone this repository
 ```bash
-git clone https://github.com/catherineordun/gan-animation.git
+git clone https://github.com/nudro/gan-animation.git
 cd gan-animation
 ```
 
@@ -85,7 +85,7 @@ This visualization helps explain:
 ## Credits
 
 Created by Catherine Ordun using:
-- Three.js for 3D visualization
+- Three.js for 2D visualization
 - Vanilla JavaScript for animation and interactivity
 
 ## License
