@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAN Gradient Exchange Animation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ccapture.js@1.1.0/build/CCapture.all.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+        }
+        button {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #388E3C;
+        }
+        button:disabled {
+            background: #9E9E9E;
+            cursor: not-allowed;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h3>GAN Gradient Exchange</h3>
+        <button id="startCapture">Start Recording</button>
+        <button id="stopCapture" disabled>Stop & Save</button>
+        <div style="margin-top: 10px;">
+            <label for="speed">Animation Speed:</label>
+            <input type="range" id="speed" min="0.1" max="2" step="0.1" value="1">
+        </div>
+        <div id="recordingStatus"></div>
+    </div>
+
+    <div id="generatorTooltip" class="tooltip">Generator</div>
+    <div id="discriminatorTooltip" class="tooltip">Discriminator</div>
+
+    <script>
+        // Main components
+        let scene, camera, renderer;
+        let generator, discriminator;
+        let generatorLabel, discriminatorLabel;
+        let gradientArrows = [];
+        let dataArrows = [];
+        let particles = [];
+        let frame = 0;
+        let capturing = false;
+        let capturer = new CCapture({ 
+            format: 'gif', 
+            workersPath: './',
+            framerate: 30,
+            quality: 90
+        });
+        
+        // Animation control
+        let speedFactor = 1;
+        
+        // Initialize the scene
+        function init() {
+            // Create the scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x121212);
+            
+            // Create the camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+            
+            // Create the renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+            
+            // Create models with labels
+            createGANModels();
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Initialize speed control
+            document.getElementById('speed').addEventListener('input', function(e) {
+                speedFactor = parseFloat(e.target.value);
+            });
+        }
+        
+        // Create Generator and Discriminator models
+        function createGANModels() {
+            // Generator (rounded rectangle)
+            const genGeometry = new THREE.PlaneGeometry(1.5, 1);
+            const genMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x4CAF50,
+                transparent: true,
+                opacity: 0.8
+            });
+            generator = new THREE.Mesh(genGeometry, genMaterial);
+            generator.position.set(-2, 0, 0);
+            
+            // Add border to generator
+            const genBorderGeometry = new THREE.EdgesGeometry(genGeometry);
+            const genBorderMaterial = new THREE.LineBasicMaterial({ color: 0xFFFFFF });
+            const genBorder = new THREE.LineSegments(genBorderGeometry, genBorderMaterial);
+            generator.add(genBorder);
+            
+            // Discriminator (rounded rectangle)
+            const discGeometry = new THREE.PlaneGeometry(1.5, 1);
+            const discMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xF44336,
+                transparent: true,
+                opacity: 0.8
+            });
+            discriminator = new THREE.Mesh(discGeometry, discMaterial);
+            discriminator.position.set(2, 0, 0);
+            
+            // Add border to discriminator
+            const discBorderGeometry = new THREE.EdgesGeometry(discGeometry);
+            const discBorderMaterial = new THREE.LineBasicMaterial({ color: 0xFFFFFF });
+            const discBorder = new THREE.LineSegments(discBorderGeometry, discBorderMaterial);
+            discriminator.add(discBorder);
+            
+            scene.add(generator, discriminator);
+            
+            // Position tooltips
+            updateTooltipPositions();
+        }
+        
+        // Create gradient arrows
+        function createGradientArrow(startX, startY, endX, endY, color, type) {
+            const arrowMaterial = new THREE.LineBasicMaterial({ 
+                color,
+                transparent: true,
+                opacity: 0.8,
+                linewidth: 2
+            });
+            
+            // Create main line
+            const points = [
+                new THREE.Vector3(startX, startY, 0),
+                new THREE.Vector3(endX, endY, 0)
+            ];
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const arrow = new THREE.Line(lineGeometry, arrowMaterial);
+            
+            // Create arrowhead
+            const headLength = 0.2;
+            const headWidth = 0.1;
+            const direction = new THREE.Vector3(endX - startX, endY - startY, 0).normalize();
+            const arrowHeadPoint1 = new THREE.Vector3(
+                endX - direction.x * headLength + direction.y * headWidth,
+                endY - direction.y * headLength - direction.x * headWidth,
+                0
+            );
+            const arrowHeadPoint2 = new THREE.Vector3(
+                endX - direction.x * headLength - direction.y * headWidth,
+                endY - direction.y * headLength + direction.x * headWidth,
+                0
+            );
+            
+            const headPoints = [
+                new THREE.Vector3(endX, endY, 0),
+                arrowHeadPoint1,
+                new THREE.Vector3(endX, endY, 0),
+                arrowHeadPoint2
+            ];
+            const headGeometry = new THREE.BufferGeometry().setFromPoints(headPoints);
+            const arrowHead = new THREE.Line(headGeometry, arrowMaterial);
+            
+            const arrowGroup = new THREE.Group();
+            arrowGroup.add(arrow);
+            arrowGroup.add(arrowHead);
+            arrowGroup.userData = { type };
+            
+            return arrowGroup;
+        }
+        
+        // Create data flow particles
+        function createParticle(startX, startY, endX, endY, color, isForward) {
+            const geometry = new THREE.CircleGeometry(0.05, 16);
+            const material = new THREE.MeshBasicMaterial({ 
+                color, 
+                transparent: true,
+                opacity: 0.8
+            });
+            const particle = new THREE.Mesh(geometry, material);
+            
+            // Initialize at start position
+            particle.position.set(startX, startY, 0);
+            
+            // Store end position and direction for animation
+            particle.userData = {
+                startX,
+                startY,
+                endX,
+                endY,
+                progress: 0,
+                speed: 0.005 + Math.random() * 0.01,
+                isForward
+            };
+            
+            scene.add(particle);
+            return particle;
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            updateTooltipPositions();
+        }
+        
+        // Position tooltips next to models
+        function updateTooltipPositions() {
+            const generatorPosition = new THREE.Vector3();
+            generator.getWorldPosition(generatorPosition);
+            generatorPosition.project(camera);
+            
+            const discriminatorPosition = new THREE.Vector3();
+            discriminator.getWorldPosition(discriminatorPosition);
+            discriminatorPosition.project(camera);
+            
+            const genTooltip = document.getElementById('generatorTooltip');
+            genTooltip.style.left = ((generatorPosition.x * 0.5 + 0.5) * window.innerWidth - 35) + 'px';
+            genTooltip.style.top = (-(generatorPosition.y * 0.5 - 0.5) * window.innerHeight - 50) + 'px';
+            
+            const discTooltip = document.getElementById('discriminatorTooltip');
+            discTooltip.style.left = ((discriminatorPosition.x * 0.5 + 0.5) * window.innerWidth - 45) + 'px';
+            discTooltip.style.top = (-(discriminatorPosition.y * 0.5 - 0.5) * window.innerHeight - 50) + 'px';
+        }
+        
+        // Main animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = frame * 0.02 * speedFactor;
+            
+            // Remove old arrows
+            gradientArrows.forEach(arrow => scene.remove(arrow));
+            gradientArrows = [];
+            
+            // Clear old data arrows
+            dataArrows.forEach(arrow => scene.remove(arrow));
+            dataArrows = [];
+            
+            // Generate new arrows based on animation phase
+            const phase = (Math.sin(time) + 1) / 2; // 0 to 1
+            
+            // Generate-to-Discriminator data flow
+            const genToDis = createGradientArrow(
+                -1.2, 0, 
+                1.2, 0, 
+                0x3F51B5, // Blue
+                'data'
+            );
+            dataArrows.push(genToDis);
+            scene.add(genToDis);
+            
+            // Discriminator gradient feedback
+            const disToGen = createGradientArrow(
+                1.2, 0.2, 
+                -1.2, 0.2, 
+                0xFF9800, // Orange
+                'gradient'
+            );
+            gradientArrows.push(disToGen);
+            scene.add(disToGen);
+            
+            // Animate opacity based on phase
+            genToDis.material = genToDis.children[0].material;
+            genToDis.material.opacity = 0.3 + 0.7 * (1 - phase);
+            
+            disToGen.material = disToGen.children[0].material;
+            disToGen.material.opacity = 0.3 + 0.7 * phase;
+            
+            // Pulse the generator and discriminator
+            generator.scale.set(
+                1 + Math.sin(time * 2) * 0.05,
+                1 + Math.sin(time * 2) * 0.05,
+                1
+            );
+            
+            discriminator.scale.set(
+                1 + Math.sin(time * 2 + 1) * 0.05,
+                1 + Math.sin(time * 2 + 1) * 0.05,
+                1
+            );
+            
+            // Create new particles occasionally
+            if (frame % 10 === 0) {
+                // Forward particle (Gen to Disc)
+                const forwardParticle = createParticle(
+                    -1.2, 0,
+                    1.2, 0,
+                    0x3F51B5, // Blue
+                    true
+                );
+                particles.push(forwardParticle);
+                
+                // Backward particle (Disc to Gen)
+                const backwardParticle = createParticle(
+                    1.2, 0.2,
+                    -1.2, 0.2,
+                    0xFF9800, // Orange
+                    false
+                );
+                particles.push(backwardParticle);
+            }
+            
+            // Animate existing particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.userData.progress += p.userData.speed * speedFactor;
+                
+                if (p.userData.progress >= 1) {
+                    // Remove particle when it reaches the end
+                    scene.remove(p);
+                    particles.splice(i, 1);
+                } else {
+                    // Update particle position
+                    const { startX, startY, endX, endY, progress } = p.userData;
+                    p.position.x = startX + (endX - startX) * progress;
+                    p.position.y = startY + (endY - startY) * progress;
+                    
+                    // Make it fade as it travels
+                    if (progress > 0.8) {
+                        p.material.opacity = (1 - progress) * 5;
+                    }
+                }
+            }
+            
+            // Update tooltip positions occasionally
+            if (frame % 30 === 0) {
+                updateTooltipPositions();
+            }
+            
+            // Render the scene
+            renderer.render(scene, camera);
+            
+            // Capture frame if recording
+            if (capturing) {
+                capturer.capture(renderer.domElement);
+                document.getElementById('recordingStatus').textContent = 
+                    `Recording: ${Math.floor(frame / 30)} seconds`;
+            }
+            
+            frame++;
+        }
+        
+        // Capture control
+        document.getElementById('startCapture').addEventListener('click', function() {
+            this.disabled = true;
+            document.getElementById('stopCapture').disabled = false;
+            
+            // Reset frame counter for cleaner animation recording
+            frame = 0;
+            capturer.start();
+            capturing = true;
+            document.getElementById('recordingStatus').textContent = "Recording started...";
+        });
+        
+        document.getElementById('stopCapture').addEventListener('click', function() {
+            this.disabled = true;
+            document.getElementById('startCapture').disabled = false;
+            
+            capturing = false;
+            capturer.stop();
+            capturer.save();
+            document.getElementById('recordingStatus').textContent = "Recording saved! Processing GIF...";
+            
+            // Create new capturer for next recording
+            capturer = new CCapture({ 
+                format: 'gif', 
+                workersPath: './',
+                framerate: 30,
+                quality: 90
+            });
+        });
+        
+        // Initialize and start animation
+        init();
+        animate();
+    </script>
+</body>
+</html> 
